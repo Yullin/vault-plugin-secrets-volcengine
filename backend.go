@@ -18,7 +18,15 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 func newBackend() logical.Backend {
 	var b backend
 	b.Backend = &framework.Backend{
-		Help:        backendHelp,
+		Help: backendHelp,
+		PathsSpecial: &logical.Paths{
+			SealWrapStorage: []string{
+				"config",
+			},
+		},
+		Paths: []*framework.Path{
+			b.pathConfig(),
+		},
 		BackendType: logical.TypeLogical,
 	}
 	return &b
