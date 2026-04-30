@@ -28,6 +28,10 @@ func newBackend() logical.Backend {
 			b.pathConfig(),
 			b.pathRole(),
 			b.pathListRoles(),
+			b.pathCreds(),
+		},
+		Secrets: []*framework.Secret{
+			b.pathSecrets(),
 		},
 		BackendType: logical.TypeLogical,
 	}
