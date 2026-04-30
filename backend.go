@@ -26,6 +26,8 @@ func newBackend() logical.Backend {
 		},
 		Paths: []*framework.Path{
 			b.pathConfig(),
+			b.pathRole(),
+			b.pathListRoles(),
 		},
 		BackendType: logical.TypeLogical,
 	}
