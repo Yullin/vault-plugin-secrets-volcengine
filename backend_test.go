@@ -218,6 +218,98 @@ func TestRoleValidation_NoPoliciesOrTRN(t *testing.T) {
 	}
 }
 
+func TestRoleCRUD_IAM(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	// Create IAM role with remote policies
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "role/test-iam-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"remote_policies": []string{"name:ReadOnlyAccess,type:System"},
+			"ttl":             "3600",
+			"max_ttl":         "7200",
+		},
+	}
+	resp, err := b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp != nil && resp.IsError() {
+		t.Fatal(resp.Error())
+	}
+
+	// Read role
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      "role/test-iam-role",
+		Storage:   storage,
+	}
+	resp, err = b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.Data["role_trn"] != "" {
+		t.Fatalf("expected empty role_trn for IAM role, got %v", resp.Data["role_trn"])
+	}
+
+	// Delete role
+	req = &logical.Request{
+		Operation: logical.DeleteOperation,
+		Path:      "role/test-iam-role",
+		Storage:   storage,
+	}
+	_, err = b.HandleRequest(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRoleValidation_IAMWithTRN(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	// IAM role with both role_trn and policies should fail
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "role/bad-iam-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"role_trn":        "trn:iam::1234567890:role/test-role",
+			"inline_policies": `[{"Statement":[{"Effect":"Allow","Action":["ecs:Describe*"],"Resource":["*"]}]}]`,
+		},
+	}
+	_, err := b.HandleRequest(ctx, req)
+	if err == nil {
+		t.Fatal("expected error when STS role has inline_policies")
+	}
+}
+
+func TestRoleValidation_TTLExceedsMaxTTL(t *testing.T) {
+	b, storage := getTestBackend(t)
+	ctx := context.Background()
+
+	req := &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      "role/bad-ttl-role",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"remote_policies": []string{"name:ReadOnlyAccess,type:System"},
+			"ttl":             "7200",
+			"max_ttl":         "3600",
+		},
+	}
+	_, err := b.HandleRequest(ctx, req)
+	if err == nil {
+		t.Fatal("expected error when ttl exceeds max_ttl")
+	}
+}
+
 func TestCredsRead_NoConfig(t *testing.T) {
 	b, storage := getTestBackend(t)
 	ctx := context.Background()

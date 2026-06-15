@@ -2,6 +2,7 @@ package volcengine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -91,7 +92,113 @@ func (b *backend) operationCredsRead(ctx context.Context, req *logical.Request, 
 		return resp, nil
 
 	case roleTypeIAM:
-		return nil, errors.New("IAM role type is not yet supported, coming in Phase 2")
+		client, err := clients.NewIAMClient(creds.AccessKey, creds.SecretKey, creds.Region)
+		if err != nil {
+			return nil, err
+		}
+
+		success := false
+		userName := generateUsername(req.DisplayName, roleName)
+
+		createUserResp, err := client.CreateUser(userName)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if success {
+				return
+			}
+			if err := client.DeleteUser(userName); err != nil {
+				b.Logger().Error(fmt.Sprintf("unable to delete user %s", userName), "error", err)
+			}
+		}()
+
+		inlinePolicies := make([]*remotePolicy, len(role.InlinePolicies))
+
+		for i, inlinePol := range role.InlinePolicies {
+			policyName := userName + "-" + inlinePol.UUID
+
+			policyDoc, err := json.Marshal(inlinePol.PolicyDocument)
+			if err != nil {
+				return nil, err
+			}
+
+			createPolicyResp, err := client.CreatePolicy(policyName, string(policyDoc))
+			if err != nil {
+				return nil, err
+			}
+
+			inlinePolicies[i] = &remotePolicy{
+				Name: *createPolicyResp.Policy.PolicyName,
+				Type: *createPolicyResp.Policy.PolicyType,
+			}
+
+			polName := *createPolicyResp.Policy.PolicyName
+			polType := *createPolicyResp.Policy.PolicyType
+			defer func() {
+				if success {
+					return
+				}
+				_ = client.DetachUserPolicy(userName, polName, polType)
+				if err := client.DeletePolicy(polName); err != nil {
+					b.Logger().Error(fmt.Sprintf("unable to delete policy %s", polName), "error", err)
+				}
+			}()
+
+			if err := client.AttachUserPolicy(userName, polName, polType); err != nil {
+				return nil, err
+			}
+		}
+
+		for _, remotePol := range role.RemotePolicies {
+			if err := client.AttachUserPolicy(userName, remotePol.Name, remotePol.Type); err != nil {
+				return nil, err
+			}
+			rPolName := remotePol.Name
+			rPolType := remotePol.Type
+			defer func() {
+				if success {
+					return
+				}
+				if err := client.DetachUserPolicy(userName, rPolName, rPolType); err != nil {
+					b.Logger().Error(fmt.Sprintf("unable to detach policy %s from user %s", rPolName, userName), "error", err)
+				}
+			}()
+		}
+
+		accessKeyResp, err := client.CreateAccessKey(*createUserResp.User.UserName)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if success {
+				return
+			}
+			if err := client.DeleteAccessKey(*accessKeyResp.AccessKey.AccessKeyId, userName); err != nil {
+				b.Logger().Error(fmt.Sprintf("unable to delete access key for user %s", userName), "error", err)
+			}
+		}()
+
+		resp := b.Secret(secretType).Response(map[string]interface{}{
+			"access_key": *accessKeyResp.AccessKey.AccessKeyId,
+			"secret_key": *accessKeyResp.AccessKey.SecretAccessKey,
+		}, map[string]interface{}{
+			"role_type":       roleTypeIAM.String(),
+			"role_name":       roleName,
+			"username":        userName,
+			"access_key_id":   *accessKeyResp.AccessKey.AccessKeyId,
+			"inline_policies": inlinePolicies,
+			"remote_policies": role.RemotePolicies,
+		})
+		if role.TTL != 0 {
+			resp.Secret.TTL = role.TTL
+		}
+		if role.MaxTTL != 0 {
+			resp.Secret.MaxTTL = role.MaxTTL
+		}
+
+		success = true
+		return resp, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported role type: %s", role.Type())
@@ -100,6 +207,10 @@ func (b *backend) operationCredsRead(ctx context.Context, req *logical.Request, 
 
 func generateRoleSessionName(displayName, roleName string) string {
 	return generateName(displayName, roleName, 32)
+}
+
+func generateUsername(displayName, roleName string) string {
+	return generateName(displayName, roleName, 64)
 }
 
 func generateName(displayName, roleName string, maxLength int) string {
