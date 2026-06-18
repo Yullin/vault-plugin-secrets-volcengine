@@ -77,15 +77,35 @@ $ vault write volcengine/role/sts-role \
     role_trn="trn:iam::200000000:role/my-role"
 ```
 
-### IAM User (Coming Soon)
+### IAM User (Dynamic)
 
 When `inline_policies` or `remote_policies` are provided instead of a `role_trn`,
-the plugin will dynamically create an IAM user, attach the policies, and generate
-an access key. These credentials can be renewed and are revoked by deleting the IAM user.
+the plugin dynamically creates an IAM user, attaches the specified policies, and generates
+an access key. These credentials are renewable and are fully revoked (access key deleted,
+policies detached, user removed) when the lease expires or is manually revoked.
 
 ```sh
 $ vault write volcengine/role/iam-role \
-    remote_policies="name:VolcReadOnlyAccess,type:System"
+    remote_policies="name:ReadOnlyAccess,type:System" \
+    ttl="1h" \
+    max_ttl="24h"
+
+$ vault read volcengine/creds/iam-role
+Key                Value
+---                -----
+lease_id           volcengine/creds/iam-role/abcd1234-5678-90ab-cdef-1234567890ab
+lease_duration     1h
+lease_renewable    true
+access_key         AKXXXXXXXXXXXXXXXXXX
+secret_key         SKXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+You can also use inline policies for fine-grained access:
+
+```sh
+$ vault write volcengine/role/inline-role \
+    inline_policies='[{"Statement":[{"Effect":"Allow","Action":["ecs:Describe*"],"Resource":["*"]}]}]' \
+    ttl="2h"
 ```
 
 ## API
@@ -145,6 +165,10 @@ Generate credentials based on the named role's configuration.
 - `secret_key` — Temporary secret access key.
 - `security_token` — STS session token.
 - `expiration` — Credential expiration time.
+
+**Returns (IAM type):**
+- `access_key` — IAM user access key ID.
+- `secret_key` — IAM user secret access key.
 
 ## Developing
 
