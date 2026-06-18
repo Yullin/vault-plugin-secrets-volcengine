@@ -116,7 +116,7 @@ func (b *backend) operationCredsRead(ctx context.Context, req *logical.Request, 
 		inlinePolicies := make([]*remotePolicy, len(role.InlinePolicies))
 
 		for i, inlinePol := range role.InlinePolicies {
-			policyName := userName + "-" + inlinePol.UUID
+			policyName := generateName("vault", inlinePol.UUID, 64)
 
 			policyDoc, err := json.Marshal(inlinePol.PolicyDocument)
 			if err != nil {

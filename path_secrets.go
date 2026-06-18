@@ -121,7 +121,7 @@ func (b *backend) operationRevoke(ctx context.Context, req *logical.Request, _ *
 
 		apiErrs := &multierror.Error{}
 
-		if err := client.DeleteAccessKey(accessKeyID, userName); err != nil {
+		if err := client.DeleteAccessKey(accessKeyID, userName); err != nil && !clients.IsNotExistError(err) {
 			apiErrs = multierror.Append(apiErrs, err)
 		}
 
@@ -130,10 +130,10 @@ func (b *backend) operationRevoke(ctx context.Context, req *logical.Request, _ *
 			return nil, err
 		}
 		for _, inlinePolicy := range inlinePolicies {
-			if err := client.DetachUserPolicy(userName, inlinePolicy.Name, inlinePolicy.Type); err != nil {
+			if err := client.DetachUserPolicy(userName, inlinePolicy.Name, inlinePolicy.Type); err != nil && !clients.IsNotExistError(err) {
 				apiErrs = multierror.Append(apiErrs, err)
 			}
-			if err := client.DeletePolicy(inlinePolicy.Name); err != nil {
+			if err := client.DeletePolicy(inlinePolicy.Name); err != nil && !clients.IsNotExistError(err) {
 				apiErrs = multierror.Append(apiErrs, err)
 			}
 		}
@@ -143,12 +143,12 @@ func (b *backend) operationRevoke(ctx context.Context, req *logical.Request, _ *
 			return nil, err
 		}
 		for _, rp := range remotePolicies {
-			if err := client.DetachUserPolicy(userName, rp.Name, rp.Type); err != nil {
+			if err := client.DetachUserPolicy(userName, rp.Name, rp.Type); err != nil && !clients.IsNotExistError(err) {
 				apiErrs = multierror.Append(apiErrs, err)
 			}
 		}
 
-		if err := client.DeleteUser(userName); err != nil {
+		if err := client.DeleteUser(userName); err != nil && !clients.IsNotExistError(err) {
 			apiErrs = multierror.Append(apiErrs, err)
 		}
 

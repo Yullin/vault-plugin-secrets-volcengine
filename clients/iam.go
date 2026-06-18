@@ -1,9 +1,22 @@
 package clients
 
 import (
+	"strings"
+
 	"github.com/volcengine/volcengine-go-sdk/service/iam"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	"github.com/volcengine/volcengine-go-sdk/volcengine/volcengineerr"
 )
+
+func IsNotExistError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if apiErr, ok := err.(volcengineerr.Error); ok {
+		return strings.Contains(apiErr.Code(), "NotExist") || strings.Contains(apiErr.Code(), "NotFound")
+	}
+	return false
+}
 
 type IAMClient struct {
 	client *iam.IAM
